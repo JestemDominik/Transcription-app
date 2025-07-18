@@ -1,5 +1,4 @@
 import streamlit as st
-from dotenv import dotenv_values
 from openai import OpenAI
 from io import BytesIO
 import json
@@ -9,8 +8,7 @@ from docx import Document
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct, Distance, VectorParams
 
-env = dotenv_values(".env")
-openai_client = OpenAI(api_key=env["OPENAI_API_KEY"])
+openai_client = st.secrets["OPENAI_API_KEY"]
 
 EMBEDDING_MODEL = "text-embedding-3-large"
 EMBEDDING_DIM = 3072
