@@ -36,7 +36,9 @@ def classify_speakers(transcript_text):
         - Przypisuj role logicznie, na podstawie stylu wypowiedzi i treści.
         - Jeśli nie masz pewności – oznacz wypowiedź jako „[Nieznane]”.
         - Zwróć tylko tekst dialogu w formacie:
-        
+        Doradca:
+        Klient:
+
         Oto transkrypcja:
         {transcript_text}
         """
@@ -46,7 +48,7 @@ def classify_speakers(transcript_text):
         messages=[
             {"role": "user", "content": prompt}
         ],
-        temperature=0.3
+        temperature=0.0
     )
     return response.choices[0].message.content.strip()
 
@@ -143,13 +145,21 @@ def search_articles(query, top_k=2):
 assure_db_collection_exists()
 load_articles_to_qdrant("articles.json")
 
+# Ładowanie informacji o produktach
+with open("products_data.json", "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+product_map = {item["product"]: item["content"] for item in data}
+
+
 # Funkcja generująca podsumowanie
-def article_creation(edited_text, top_articles, temp_lvl):
+def article_creation(edited_text, top_articles, product_contents, temp_lvl):
     article1 = top_articles.get("article1", {"title": "", "content": ""})
     article2 = top_articles.get("article2", {"title": "", "content": ""})
+    product_info_block = "\n\n".join(product_contents)
     prompt = (
         f"""
-        Na podstawie poniższej transkrypcji rozmowy z klientem oraz dwóch artykułów, napisz nowy artykuł reklamowo-informacyjny do gazety:
+        Na podstawie poniższej transkrypcji rozmowy z klientem oraz informacji o naszym produkcie, napisz jeden nowy artykuł reklamowo-informacyjny do gazety takżeby był w formie dwóch artykułów podanych poniżej:
 
         - Ma on być atrakcyjny i przekonujący dla klienta z rozmowy.
         - Uwzględnij potrzeby, problemy lub pytania, które pojawiły się w transkrypcji.
@@ -158,9 +168,12 @@ def article_creation(edited_text, top_articles, temp_lvl):
         - Napisz tekst w stylu poradnikowym lub storytellingowym – dostosuj ton do tego, co wynika z rozmowy.
 
         ---
-
+ 
         📞 Rozmowa z klientem:
         \"\"\"{edited_text}\"\"\"
+
+        Informacje na temat naszego produktu:
+        \"\"\"{product_info_block}\"\"\"
 
         ---
 
@@ -178,7 +191,7 @@ def article_creation(edited_text, top_articles, temp_lvl):
         """
     )
     response = openai_client.chat.completions.create(
-        model="gpt-4o-mini", 
+        model="gpt-4o", 
         messages=[
             {"role": "user", "content": prompt}
         ],
@@ -211,7 +224,7 @@ if 'edited_text' not in st.session_state:
 # --- STREAMLIT UI ---
 #
 st.set_page_config(page_title="Transkryptor", layout="wide")
-st.title("🎙️ Audio2Doc — Transkrypcja z przypisaniem ról")
+st.title("🎙️ Generator contentu")
 st.session_state['uploaded_file'] = st.file_uploader("Wgraj rozmowę z klientem", type=["mp3"])
 
 if st.session_state['uploaded_file']:
@@ -237,12 +250,20 @@ if st.session_state['uploaded_file']:
 
 
     with col2:
-        value = st.slider('Creativity', 0, 100, 30)
+        bacol1, bacol2, bacol3 = st.columns([2, 2, 1])
+        with bacol1:
+            selected_products = st.multiselect('Wybierz produkt', options=list(product_map.keys()))
+        with bacol2:
+            value = st.slider('Creativity', 0, 100, 30)
+        
         temp_level = (value/100)
-        if st.button('☢️'):
-            with st.spinner("Tworzę artykuł ⚔️"):
-                top_articles = search_articles(st.session_state['edited_text'])
-                st.session_state['final_article'] = article_creation(st.session_state['edited_text'], top_articles, temp_level)
+        product_contents = [product_map[p] for p in selected_products] if selected_products else []
+
+        with bacol3:
+            if st.button('☢️', use_container_width=True):
+                with st.spinner("Tworzę artykuł ⚔️"):
+                    top_articles = search_articles(st.session_state['edited_text'])
+                    st.session_state['final_article'] = article_creation(st.session_state['edited_text'], top_articles, product_contents, temp_level)
 
         if "final_article" in st.session_state:
             st.session_state['final_article'] = st.text_area('Artykuł:', st.session_state['final_article'], height=600)
